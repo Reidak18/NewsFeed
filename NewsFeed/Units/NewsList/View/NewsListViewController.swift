@@ -28,12 +28,37 @@ final class NewsListViewController: UIViewController {
             frame: .zero,
             collectionViewLayout: createCollectionViewLayout()
         )
-        cv.dataSource = viewModel
         cv.delegate = self
         cv.register(NewsCell.self, forCellWithReuseIdentifier: NewsCell.identificator)
         cv.backgroundColor = .systemBackground
         cv.translatesAutoresizingMaskIntoConstraints = false
         return cv
+    }()
+
+    private lazy var collectionViewDataSource: NewsDiffableDataSource = {
+        let dataSource = NewsDiffableDataSource(
+            collectionView: collectionView,
+            cellProvider: { [weak self] collectionView, indexPath, itemIdentifier in
+                guard let self,
+                      let cell = collectionView.dequeueReusableCell(
+                    withReuseIdentifier: NewsCell.identificator,
+                    for: indexPath
+                ) as? NewsCell else {
+                    return UICollectionViewCell()
+                }
+                let news = self.viewModel.news[indexPath.row]
+                cell.setContent(title: "", image: nil)
+                Task {
+                    let image = await self.viewModel.loadImage(news.titleImageUrl)
+                    DispatchQueue.main.async {
+                        guard cell === collectionView.cellForItem(at: indexPath) else { return }
+                        cell.setContent(title: news.title, image: image)
+                    }
+                }
+                return cell
+            }
+        )
+        return dataSource
     }()
 
     // MARK: Init
@@ -77,7 +102,7 @@ private extension NewsListViewController {
         viewModel.$news.sink { [weak self] page in
             DispatchQueue.main.async {
                 self?.isLoading = false
-                self?.collectionView.reloadData()
+                self?.collectionViewDataSource.addItems(page.map({ NewsCellItem(id: $0.id) }))
             }
         }
         .store(in: &cancellableSet)
